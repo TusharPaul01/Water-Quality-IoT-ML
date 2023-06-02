@@ -1,0 +1,272 @@
+//for actual code you may contact at Email ID : tusharpaul2001@gmail.com
+//some part of the code is private, so you may contact through email 
+
+#include <ArtnetWifi.h>
+#include <ThingSpeak.h>
+#include <HTTPClient.h>
+
+//#define AOUT_PIN 0
+#include <WiFi.h>
+#include "ThingSpeak.h"
+const char* ssid = "Tushar_Paul";
+const char* password = "Hello_IoT";
+unsigned long myChannelNumber = ######;
+const char * myWriteAPIKey = "EnterAPIkey";
+const char*server="api.thingspeak.com";
+String servername="write servername";
+WiFiClient client;
+
+//ph
+const int potPin=A0;                                                             //pH sensor
+float ph;
+float Value=0;  
+
+//temp ds18b20
+
+#include <DHT.h>
+#define DHT_SENSOR_PIN  A0 // ESP32 pin GIOP21 connected to DHT22 sensor
+#define DHT_SENSOR_TYPE DHT11                                                    // for Humidity and temperature sensor  DHT 22
+
+DHT dht_sensor(DHT_SENSOR_PIN, DHT_SENSOR_TYPE);
+
+ 
+#include <OneWire.h>                   //temp
+#include <DallasTemperature.h>
+
+// Data wire is conntec to the Arduino digital pin 4
+#define ONE_WIRE_BUS 4
+
+// Setup a oneWire instance to communicate with any OneWire devices
+OneWire oneWire(ONE_WIRE_BUS);
+
+// Pass our oneWire reference to Dallas Temperature sensor 
+DallasTemperature sensors(&oneWire);
+
+
+
+//tds sensor
+#define TdsSensorPin A0
+#define VREF 3.3             // analog reference voltage(Volt) of the ADC
+#define SCOUNT  30            // sum of sample point
+
+int analogBuffer[SCOUNT];     // store the analog value in the array, read from ADC
+int analogBufferTemp[SCOUNT];
+int analogBufferIndex = 0;
+int copyIndex = 0;
+
+float averageVoltage = 0;
+float tdsValue = 0;
+float temperature = 25;       // current temperature for compensation
+
+// median filtering algorithm
+int getMedianNum(int bArray[], int iFilterLen){
+  int bTab[iFilterLen];
+  for (byte i = 0; i<iFilterLen; i++)
+  bTab[i] = bArray[i];
+  int i, j, bTemp;
+  for (j = 0; j < iFilterLen - 1; j++) {
+    for (i = 0; i < iFilterLen - j - 1; i++) {
+      if (bTab[i] > bTab[i + 1]) {
+        bTemp = bTab[i];
+        bTab[i] = bTab[i + 1];
+        bTab[i + 1] = bTemp;
+      }
+    }
+  }
+  if ((iFilterLen & 1) > 0){
+    bTemp = bTab[(iFilterLen - 1) / 2];
+  }
+  else {
+    bTemp = (bTab[iFilterLen / 2] + bTab[iFilterLen / 2 - 1]) / 2;
+  }
+  return bTemp;
+}
+
+
+void setup() {
+  // put your setup code here, to run once:
+  Serial.begin(115200);
+  pinMode(potPin,INPUT);                                 //pH sensor
+  delay(1000);
+
+
+    delay(1000);
+
+
+    WiFi.mode(WIFI_STA); //Optional
+    WiFi.begin(ssid, password);
+    Serial.println("\nConnecting");
+
+    while(WiFi.status() != WL_CONNECTED)
+    {
+        Serial.print(".");
+        delay(100);
+    }
+
+    Serial.println("\nConnected to the WiFi network");
+    Serial.print("Local ESP32 IP: ");
+    Serial.println(WiFi.localIP());
+
+  /////////
+  Serial.begin(115200);
+  pinMode(TdsSensorPin,INPUT);           //TDS Sensor
+
+  /////////
+
+  
+}
+
+float round_to_dp( float in_value, int decimal_place )
+{                                                                   //turbidity 
+  float multiplier = powf( 10.0f, decimal_place );
+  in_value = roundf( in_value * multiplier ) / multiplier;
+  return in_value;
+}
+
+ void loop(){
+ 
+    Value= analogRead(potPin);                            //pH sensor
+    //Serial.print(Value);
+    //Serial.print(" | ");
+    float voltage=Value*(3.3/4095.0);
+    ph=(3.3*voltage);
+    ph = ph+1.55;
+    Serial.print("pH value : ");
+    Serial.println(ph);
+    delay(500);
+
+    //////
+
+    static unsigned long analogSampleTimepoint = millis();
+  if(millis()-analogSampleTimepoint > 40U){     //every 200 milliseconds,read the analog value from the ADC
+    analogSampleTimepoint = millis();
+    analogBuffer[analogBufferIndex] = analogRead(TdsSensorPin);    //read the analog value and store into the buffer
+    analogBufferIndex++;
+    if(analogBufferIndex == SCOUNT){ 
+      analogBufferIndex = 0;
+    }
+  }   
+  
+  static unsigned long printTimepoint = millis();
+  if(millis()-printTimepoint > 800U){
+    printTimepoint = millis();
+    for(copyIndex=0; copyIndex<SCOUNT; copyIndex++){
+      analogBufferTemp[copyIndex] = analogBuffer[copyIndex];
+      
+      // read the analog value more stable by the median filtering algorithm, and convert to voltage value
+      averageVoltage = getMedianNum(analogBufferTemp,SCOUNT) * (float)VREF / 4096.0;
+      
+      //temperature compensation formula: fFinalResult(25^C) = fFinalResult(current)/(1.0+0.02*(fTP-25.0)); 
+      float compensationCoefficient = 1.0+0.02*(temperature-25.0);
+      //temperature compensation
+      float compensationVoltage=averageVoltage/compensationCoefficient;
+      
+      //convert voltage value to tds value
+      tdsValue=(133.42*compensationVoltage*compensationVoltage*compensationVoltage - 255.86*compensationVoltage*compensationVoltage + 857.39*compensationVoltage)*0.5;
+      tdsValue = tdsValue +60;
+      if(tdsValue <= 60)
+      {
+        tdsValue = 0; 
+      }
+      Serial.print("TDS Value:");
+      Serial.print(tdsValue,0);
+      Serial.println("ppm");
+    }
+    
+    }
+
+    //////
+
+    int sensorValue = analogRead(A0);
+    float ntu;                                          //turbidity sensor
+  //float volt = sensorValue * (5.0 / 1024.0);
+   float volt;
+
+  for(int i=0; i<800; i++)
+    {
+        volt += ((float)analogRead(A0)/1023)*5;
+    }
+    volt = volt/800;
+    volt = round_to_dp(volt,1);
+    if(volt < 2.5){
+       ntu = 3000;
+    }else{
+       ntu = -1*(-111.25*(volt))+506.67;                 // calibration
+     
+    }
+   Serial.print("Turbidity :" );
+   Serial.println(ntu);
+
+///temp 18b20
+sensors.requestTemperatures(); 
+  
+  Serial.print("Celsius temperature: ");
+  // Why "byIndex"? You can have more than one IC on the same bus. 0 refers to the first IC on the wire
+  Serial.print(sensors.getTempCByIndex(0)); 
+  double TC = sensors.getTempCByIndex(0);
+  Serial.print(" - Fahrenheit temperature: ");
+  double TF = sensors.getTempFByIndex(0);
+  Serial.println(TF);
+  delay(500);
+
+
+  // volt gives turbidity
+  //calculate_potability 
+  int pot;
+  if(ntu<5 && ph>6.5 && ph<8.5 && (tdsValue/100)>50 && (tdsValue/100)<300)
+  {
+    pot = 1 ;  // Good
+  }
+
+  else{
+  pot =0;
+  }
+  Serial.print("Potability : " );
+  Serial.println(pot);
+  Serial.println();
+  Serial.println("-----------------------------------------");
+
+  
+  //////
+   
+  if(WiFi.status()== WL_CONNECTED){ // Check to make sure wifi is still connected
+     sendData(); // Call the sendData function defined below
+     //sendDataToSheet();
+   }
+    else {
+      Serial.println("WiFi Disconnected");
+   }
+   
+  
+ }
+
+ void sendData()
+{
+  HTTPClient http; // Initialize our HTTP client
+
+  String url  = servername + "&field1=" + ntu + "&field2=" + ph + "&field3=" + tdsValue+ "&field4=" + pot + "&field5=" + TC + "&field6=" + TF;
+  
+  
+  http.begin(url.c_str()); // Initialize our HTTP request
+ 
+  int httpResponseCode = http.GET(); // Send HTTP request
+      
+  if (httpResponseCode > 0)
+  {                           // Check for good HTTP status code
+    Serial.print("HTTP Response code: ");
+    Serial.println(httpResponseCode);
+  }else
+  {
+    Serial.print("Error code: ");
+    Serial.println(httpResponseCode);
+  }
+  http.end();
+}
+
+/////////////////////////////////////////////////////
+
+//you may face few problem with this code
+//for actual code you may contact at Email ID : tusharpaul2001@gmail.com
+//some part of the code is private, so you may contact through email 
+
+
