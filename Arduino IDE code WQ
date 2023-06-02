@@ -1,6 +1,9 @@
 //for actual code you may contact at Email ID : tusharpaul2001@gmail.com
 //some part of the code is private, so you may contact through email 
 
+To execute the code, you will need to install Arduino IDE on your system and have sensors such as pH, turbidity, and TDS connected to an ESP32 module using a breadboard.
+Once the code is uploaded and running, it fetches data from the sensors and sends it to the cloud platform called ThingSpeak
+
 #include <ArtnetWifi.h>
 #include <ThingSpeak.h>
 #include <HTTPClient.h>
