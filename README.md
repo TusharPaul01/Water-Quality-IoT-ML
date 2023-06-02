@@ -15,6 +15,7 @@ Steps :
 9) Run the code again
 10) Switch on the wifi & let the micro-controller connect to the wifi
 11) Real-time data will be displayed on ThingSpeak & can be accessed anywhere through the link
+12) Machine Learning portion is not provided here & it would be provide further.
 
 
 -- Thank You --
