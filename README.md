@@ -24,3 +24,5 @@ Steps :
 
 
 -- Thank You --
+
+LICENCE : https://github.com/TusharPaul01/Water-Quality-IoT-ML/blob/main/LICENSE 
